@@ -9,13 +9,22 @@
 <body>
 
     <div class="container">
-        <div id="login-screen">
-            <h2>Acesso Restrito</h2>
-            <input type="text" id="username" placeholder="Usuário (admin)">
-            <input type="password" id="password" placeholder="Senha (12345)">
-            <button onclick="fazerLogin()">Entrar</button>
-            <p id="msg-erro" class="erro"></p>
-        </div>
+      <div id="login-screen">
+        <h2 id="titulo-login">Acesso Restrito</h2>
+        
+        <input type="text" id="username" placeholder="Usuário">
+        <input type="password" id="password" placeholder="Senha">
+        
+        <button id="btn-acao" onclick="fazerLogin()">Entrar</button>
+        
+        <p id="msg-erro" class="erro"></p>
+        
+        <hr>
+        <p>
+            <span id="texto-alternar">Não tem conta?</span>
+            <a href="#" onclick="alternarModo()" id="link-alternar">Cadastre-se</a>
+        </p>
+    </div>
 
         <div id="app-screen" class="hidden">
             <h2>Contador de Clicks</h2>
