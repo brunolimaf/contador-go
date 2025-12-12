@@ -4,7 +4,7 @@ const appScreen = document.getElementById('app-screen');
 const contadorDisplay = document.getElementById('contador');
 const msgErro = document.getElementById('msg-erro');
 
-// === LÓGICA DE TROCA DE TELA (LOGIN vs CADASTRO) ===
+// === LÓGICA DE TROCA DE TELA ===
 let modoAtual = 'login'; 
 
 function alternarModo() {
@@ -32,15 +32,12 @@ function alternarModo() {
     }
 }
 
-// === FUNÇÃO DE REGISTRO ===
+// === REGISTRO ===
 async function registrarUsuario() {
     const usuarioInput = document.getElementById('username').value;
     const senhaInput = document.getElementById('password').value;
 
-    if (!usuarioInput || !senhaInput) {
-        msgErro.innerText = "Preencha todos os campos!";
-        return;
-    }
+    if (!usuarioInput || !senhaInput) { msgErro.innerText = "Preencha todos os campos!"; return; }
 
     try {
         const response = await fetch('/api/registrar', {
@@ -48,21 +45,17 @@ async function registrarUsuario() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ usuario: usuarioInput, senha: senhaInput })
         });
-
         if (response.ok) {
-            alert("Conta criada com sucesso! Agora faça login.");
+            alert("Conta criada! Faça login.");
             alternarModo();
         } else {
             const data = await response.text(); 
             msgErro.innerText = "Erro: " + data;
         }
-    } catch (e) {
-        msgErro.innerText = "Erro ao conectar com servidor.";
-        console.error(e);
-    }
+    } catch (e) { console.error(e); }
 }
 
-// === FUNÇÃO DE LOGIN ===
+// === LOGIN ===
 async function fazerLogin() {
     const usuarioInput = document.getElementById('username').value;
     const senhaInput = document.getElementById('password').value;
@@ -80,12 +73,9 @@ async function fazerLogin() {
             carregarContadorDoServidor();
             msgErro.innerText = "";
         } else {
-            msgErro.innerText = "Usuário ou senha incorretos!";
+            msgErro.innerText = "Dados incorretos!";
         }
-    } catch (e) {
-        msgErro.innerText = "Erro de conexão.";
-        console.error(e);
-    }
+    } catch (e) { console.error(e); }
 }
 
 // === INICIALIZAÇÃO ===
@@ -95,18 +85,17 @@ window.onload = function() {
         mostrarApp();
         carregarContadorDoServidor();
     }
+    // Inicia o WebSocket independente do login para garantir conexão
+    conectarWebSocket();
 };
 
-// === FUNÇÕES DO CONTADOR ===
+// === API CONTADOR ===
 async function carregarContadorDoServidor() {
     try {
         const res = await fetch('/api/contador'); 
         const data = await res.json();
-        console.log("Valor vindo do banco:", data.valor);
         contadorDisplay.innerText = data.valor;
-    } catch (e) {
-        console.error("Erro ao buscar contador", e);
-    }
+    } catch (e) { console.error(e); }
 }
 
 async function incrementar() {
@@ -114,9 +103,7 @@ async function incrementar() {
         const res = await fetch('/api/contador', { method: 'POST' });
         const data = await res.json();
         contadorDisplay.innerText = data.valor;
-    } catch (e) {
-        console.error("Erro ao incrementar", e);
-    }
+    } catch (e) { console.error(e); }
 }
 
 function mostrarApp() {
@@ -130,32 +117,42 @@ function sair() {
 }
 
 // ==========================================
-// === WEBSOCKET (TEMPO REAL) - O CÓDIGO FINAL ===
+// === WEBSOCKET ROBUSTO (AUTO-RECONNECT) ===
 // ==========================================
 
-console.log(">>> O SCRIPT CHEGOU NO FINAL E VAI TENTAR CONECTAR <<<");
+let socket; // Variável global para o socket
 
-// 1. Detecta protocolo
-const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-const wsUrl = `${protocol}//${window.location.host}/ws`;
+function conectarWebSocket() {
+    // Evita criar duplicatas se já estiver conectado
+    if (socket && socket.readyState === WebSocket.OPEN) return;
 
-// 2. Conecta
-console.log("Tentando conectar em:", wsUrl);
-const socket = new WebSocket(wsUrl);
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}/ws`;
 
-socket.onmessage = (event) => {
-    const data = JSON.parse(event.data);
-    console.log("🔥 ATUALIZAÇÃO RECEBIDA:", data.valor);
-    
-    if (contadorDisplay) {
-        contadorDisplay.innerText = data.valor;
-    }
-};
+    console.log("Tentando conectar WebSocket...");
+    socket = new WebSocket(wsUrl);
 
-socket.onerror = (error) => {
-    console.error("❌ ERRO NO WEBSOCKET:", error);
-};
+    socket.onmessage = (event) => {
+        try {
+            const data = JSON.parse(event.data);
+            if (contadorDisplay) {
+                contadorDisplay.innerText = data.valor;
+            }
+        } catch (e) {}
+    };
 
-socket.onclose = () => {
-    console.log("⚠️ WEBSOCKET DESCONECTADO");
-};
+    socket.onopen = () => {
+        console.log("WebSocket Conectado!");
+    };
+
+    // A MÁGICA ESTÁ AQUI: Se cair, tenta de novo em 2 segundos
+    socket.onclose = () => {
+        console.log("WebSocket caiu. Reconectando em 2 segundos...");
+        setTimeout(conectarWebSocket, 2000);
+    };
+
+    socket.onerror = (err) => {
+        console.error("Erro WS, vai fechar e tentar reconectar.");
+        socket.close(); // Força o fechamento para disparar o onclose
+    };
+}
