@@ -1,5 +1,5 @@
 # 1. Escolhemos uma imagem base leve do Go (Alpine Linux)
-FROM golang:1.23-alpine
+FROM golang:1.25-alpine
 
 # 2. Cria uma pasta dentro do container para nosso app
 WORKDIR /app
