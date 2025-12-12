@@ -13,29 +13,26 @@ function alternarModo() {
     const texto = document.getElementById('texto-alternar');
     const link = document.getElementById('link-alternar');
 
-    // Limpa mensagem de erro ao trocar de tela
     msgErro.innerText = ""; 
 
     if (modoAtual === 'login') {
-        // Muda para modo Cadastro
         modoAtual = 'cadastro';
         titulo.innerText = "Criar Nova Conta";
         btn.innerText = "Cadastrar";
-        btn.onclick = registrarUsuario; // Define a função do botão para Registrar
+        btn.onclick = registrarUsuario;
         texto.innerText = "Já tem conta?";
         link.innerText = "Fazer Login";
     } else {
-        // Volta para modo Login
         modoAtual = 'login';
         titulo.innerText = "Acesso Restrito";
         btn.innerText = "Entrar";
-        btn.onclick = fazerLogin; // Define a função do botão para Login
+        btn.onclick = fazerLogin;
         texto.innerText = "Não tem conta?";
         link.innerText = "Cadastre-se";
     }
 }
 
-// === FUNÇÃO DE REGISTRO (NOVA) ===
+// === FUNÇÃO DE REGISTRO ===
 async function registrarUsuario() {
     const usuarioInput = document.getElementById('username').value;
     const senhaInput = document.getElementById('password').value;
@@ -54,9 +51,8 @@ async function registrarUsuario() {
 
         if (response.ok) {
             alert("Conta criada com sucesso! Agora faça login.");
-            alternarModo(); // Volta automaticamente para a tela de login
+            alternarModo();
         } else {
-            // Tenta ler a mensagem de erro que o Go mandou (ex: "Usuário já existe")
             const data = await response.text(); 
             msgErro.innerText = "Erro: " + data;
         }
@@ -79,9 +75,9 @@ async function fazerLogin() {
         });
 
         if (response.ok) {
-            localStorage.setItem('usuario_logado', 'sim'); // Salva sessão no navegador
+            localStorage.setItem('usuario_logado', 'sim');
             mostrarApp();
-            carregarContadorDoServidor(); // Busca o contador do banco
+            carregarContadorDoServidor();
             msgErro.innerText = "";
         } else {
             msgErro.innerText = "Usuário ou senha incorretos!";
@@ -95,17 +91,13 @@ async function fazerLogin() {
 // === INICIALIZAÇÃO ===
 window.onload = function() {
     const logado = localStorage.getItem('usuario_logado');
-    
-    // Se já estiver logado (pelo localStorage), pula o login
     if (logado === 'sim') {
         mostrarApp();
         carregarContadorDoServidor();
     }
 };
 
-// === FUNÇÕES DO CONTADOR (BANCO DE DADOS) ===
-
-// Busca o valor atual (GET)
+// === FUNÇÕES DO CONTADOR ===
 async function carregarContadorDoServidor() {
     try {
         const res = await fetch('/api/contador'); 
@@ -117,20 +109,16 @@ async function carregarContadorDoServidor() {
     }
 }
 
-// Aumenta o valor (POST)
 async function incrementar() {
     try {
         const res = await fetch('/api/contador', { method: 'POST' });
         const data = await res.json();
-        
-        // Atualiza a tela com o valor confirmado pelo banco
         contadorDisplay.innerText = data.valor;
     } catch (e) {
         console.error("Erro ao incrementar", e);
     }
 }
 
-// === FUNÇÕES DE TELA ===
 function mostrarApp() {
     loginScreen.classList.add('hidden');
     appScreen.classList.remove('hidden');
@@ -140,3 +128,34 @@ function sair() {
     localStorage.removeItem('usuario_logado');
     location.reload(); 
 }
+
+// ==========================================
+// === WEBSOCKET (TEMPO REAL) - O CÓDIGO FINAL ===
+// ==========================================
+
+console.log(">>> O SCRIPT CHEGOU NO FINAL E VAI TENTAR CONECTAR <<<");
+
+// 1. Detecta protocolo
+const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+const wsUrl = `${protocol}//${window.location.host}/ws`;
+
+// 2. Conecta
+console.log("Tentando conectar em:", wsUrl);
+const socket = new WebSocket(wsUrl);
+
+socket.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+    console.log("🔥 ATUALIZAÇÃO RECEBIDA:", data.valor);
+    
+    if (contadorDisplay) {
+        contadorDisplay.innerText = data.valor;
+    }
+};
+
+socket.onerror = (error) => {
+    console.error("❌ ERRO NO WEBSOCKET:", error);
+};
+
+socket.onclose = () => {
+    console.log("⚠️ WEBSOCKET DESCONECTADO");
+};

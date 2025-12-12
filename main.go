@@ -8,8 +8,9 @@ import (
 	"net/http"
 	"os"
 
-	_ "github.com/lib/pq"        // Importa o driver do Postgres (o "_" é necessário)
-	"golang.org/x/crypto/bcrypt" // <--- Biblioteca de Segurança
+	"github.com/gorilla/websocket" // <--- NOVO: Biblioteca de WebSocket
+	_ "github.com/lib/pq"          // Importa o driver do Postgres (o "_" é necessário)
+	"golang.org/x/crypto/bcrypt"   // <--- Biblioteca de Segurança
 )
 
 // Estrutura para login
@@ -21,8 +22,16 @@ type Credenciais struct {
 // Variável global para conexão com o banco
 var db *sql.DB
 
+// === NOVO: Configuração do WebSocket ===
+var clients = make(map[*websocket.Conn]bool) // Mapa de quem está conectado
+var broadcast = make(chan int)               // Canal para enviar o número novo
+var upgrader = websocket.Upgrader{
+	CheckOrigin: func(r *http.Request) bool {
+		return true // Permite conexão de qualquer lugar
+	},
+}
+
 func main() {
-	// 1. Conexão com Banco (Igual a antes)
 	connStr := os.Getenv("DATABASE_URL")
 	if connStr == "" {
 		connStr = "postgres://user:password@127.0.0.1:5432/contador_db?sslmode=disable"
@@ -34,48 +43,83 @@ func main() {
 		log.Fatal(err)
 	}
 	if err = db.Ping(); err != nil {
-		log.Fatal("Erro ao conectar no banco:", err)
+		log.Fatal("Erro no DB:", err)
 	}
 
-	// Cria tabelas
 	criarTabelas()
 
-	// 2. Rotas
+	// === NOVO: Inicia a "antena" que fica ouvindo mensagens para enviar ===
+	go handleMessages()
+
 	fs := http.FileServer(http.Dir("./static"))
 	http.Handle("/", fs)
 
-	http.HandleFunc("/api/registrar", registrarHandler) // NOVA ROTA
-	http.HandleFunc("/api/login", loginHandler)         // ROTA ATUALIZADA
+	http.HandleFunc("/api/registrar", registrarHandler)
+	http.HandleFunc("/api/login", loginHandler)
 	http.HandleFunc("/api/contador", contadorHandler)
 
-	// 3. Servidor
+	// === NOVO: Rota do WebSocket ===
+	http.HandleFunc("/ws", wsHandler)
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
-	fmt.Println("Servidor rodando na porta:", port)
+	fmt.Println("Servidor WebSocket rodando na porta:", port)
 	log.Fatal(http.ListenAndServe(":"+port, nil))
 }
 
-func criarTabelas() {
-	// Tabela do Contador (Mantivemos)
-	db.Exec(`CREATE TABLE IF NOT EXISTS clicks (
-		id SERIAL PRIMARY KEY,
-		quantidade INT NOT NULL DEFAULT 0
-	);`)
-	db.Exec(`INSERT INTO clicks (id, quantidade) VALUES (1, 0) ON CONFLICT (id) DO NOTHING`)
-
-	// NOVA TABELA: Usuários
-	// username deve ser UNIQUE para não ter dois iguais
-	query := `CREATE TABLE IF NOT EXISTS usuarios (
-		id SERIAL PRIMARY KEY,
-		username TEXT UNIQUE NOT NULL,
-		password_hash TEXT NOT NULL
-	);`
-	_, err := db.Exec(query)
+// === NOVO: Transforma HTTP em WebSocket ===
+func wsHandler(w http.ResponseWriter, r *http.Request) {
+	// Atualiza a conexão para WebSocket
+	ws, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Fatal("Erro ao criar tabela usuarios:", err)
+		log.Fatal(err)
 	}
+	// Deixa de fechar a conexão, mas garante que fecha se a função terminar
+	defer ws.Close()
+
+	// Registra o novo cliente
+	clients[ws] = true
+
+	// Loop infinito para manter a conexão viva
+	for {
+		var msg interface{}
+		// Lê mensagens (mesmo que não usemos input do cliente por aqui, precisamos ler)
+		err := ws.ReadJSON(&msg)
+		if err != nil {
+			delete(clients, ws)
+			break
+		}
+	}
+}
+
+// === NOVO: Envia mensagens para todos os conectados ===
+func handleMessages() {
+	for {
+		// Espera chegar um número novo
+		novoValor := <-broadcast
+
+		// --- LOG DE DEBUG ---
+		//fmt.Println("Backend: Recebi novo valor para espalhar:", novoValor)
+		//fmt.Println("Backend: Tenho", len(clients), "clientes conectados.")
+		// --------------------
+
+		for client := range clients {
+			err := client.WriteJSON(map[string]int{"valor": novoValor})
+			if err != nil {
+				fmt.Println("Erro ao enviar para cliente, desconectando...")
+				client.Close()
+				delete(clients, client)
+			}
+		}
+	}
+}
+
+func criarTabelas() {
+	db.Exec(`CREATE TABLE IF NOT EXISTS clicks (id SERIAL PRIMARY KEY, quantidade INT NOT NULL DEFAULT 0);`)
+	db.Exec(`INSERT INTO clicks (id, quantidade) VALUES (1, 0) ON CONFLICT (id) DO NOTHING`)
+	db.Exec(`CREATE TABLE IF NOT EXISTS usuarios (id SERIAL PRIMARY KEY, username TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL);`)
 }
 
 // === NOVO: Registrar Usuário ===
@@ -84,30 +128,15 @@ func registrarHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Método invalido", 405)
 		return
 	}
-
 	var creds Credenciais
-	if err := json.NewDecoder(r.Body).Decode(&creds); err != nil {
-		http.Error(w, "Erro no JSON", 400)
-		return
-	}
-
-	// 1. Gerar o HASH da senha (Custo 10 é um bom balanço)
-	hash, err := bcrypt.GenerateFromPassword([]byte(creds.Senha), 10)
+	json.NewDecoder(r.Body).Decode(&creds)
+	hash, _ := bcrypt.GenerateFromPassword([]byte(creds.Senha), 10)
+	_, err := db.Exec("INSERT INTO usuarios (username, password_hash) VALUES ($1, $2)", creds.Usuario, string(hash))
 	if err != nil {
-		http.Error(w, "Erro ao criptografar senha", 500)
+		http.Error(w, "Erro registro", 400)
 		return
 	}
-
-	// 2. Salvar no Banco
-	_, err = db.Exec("INSERT INTO usuarios (username, password_hash) VALUES ($1, $2)", creds.Usuario, string(hash))
-	if err != nil {
-		// Se der erro, provavelmente o usuário já existe
-		http.Error(w, "Erro: Usuário provavelmente já existe", 400)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"msg": "Usuário criado com sucesso!"})
+	json.NewEncoder(w).Encode(map[string]string{"msg": "Criado"})
 }
 
 // Handler para Ler (GET) e Atualizar (POST) o contador
@@ -115,28 +144,27 @@ func contadorHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	if r.Method == http.MethodGet {
-		// --- LER DO BANCO ---
 		var qtd int
-		// Pega o valor onde o ID é 1
-		err := db.QueryRow("SELECT quantidade FROM clicks WHERE id = 1").Scan(&qtd)
-		if err != nil {
-			http.Error(w, "Erro ao ler banco", http.StatusInternalServerError)
-			return
-		}
+		db.QueryRow("SELECT quantidade FROM clicks WHERE id = 1").Scan(&qtd)
 		json.NewEncoder(w).Encode(map[string]int{"valor": qtd})
 
 	} else if r.Method == http.MethodPost {
-		// --- ATUALIZAR NO BANCO ---
-		// Atualiza somando +1 onde o ID é 1
+		// 1. Atualiza no Banco
 		_, err := db.Exec("UPDATE clicks SET quantidade = quantidade + 1 WHERE id = 1")
 		if err != nil {
-			http.Error(w, "Erro ao atualizar banco", http.StatusInternalServerError)
+			http.Error(w, "Erro DB", 500)
 			return
 		}
 
-		// Lê o novo valor para devolver ao front
+		// 2. Pega o novo valor
 		var novaQtd int
 		db.QueryRow("SELECT quantidade FROM clicks WHERE id = 1").Scan(&novaQtd)
+
+		// 3. === NOVO: Avisa o canal de Broadcast ===
+		// Isso vai acionar a função handleMessages lá em cima
+		broadcast <- novaQtd
+
+		// 4. Responde para quem clicou (o HTTP padrão)
 		json.NewEncoder(w).Encode(map[string]int{"valor": novaQtd})
 	}
 }
@@ -147,33 +175,17 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Método invalido", 405)
 		return
 	}
-
 	var creds Credenciais
-	if err := json.NewDecoder(r.Body).Decode(&creds); err != nil {
-		http.Error(w, "Erro no JSON", 400)
-		return
-	}
-
-	// 1. Buscar o HASH do usuário no banco
+	json.NewDecoder(r.Body).Decode(&creds)
 	var hashSalvo string
 	err := db.QueryRow("SELECT password_hash FROM usuarios WHERE username=$1", creds.Usuario).Scan(&hashSalvo)
-
 	if err == sql.ErrNoRows {
-		// Usuário não encontrado
 		w.WriteHeader(401)
-		json.NewEncoder(w).Encode(map[string]bool{"sucesso": false})
 		return
 	}
-
-	// 2. Comparar a senha enviada com o HASH salvo
-	err = bcrypt.CompareHashAndPassword([]byte(hashSalvo), []byte(creds.Senha))
-
-	if err == nil {
-		// Senha bateu!
+	if bcrypt.CompareHashAndPassword([]byte(hashSalvo), []byte(creds.Senha)) == nil {
 		json.NewEncoder(w).Encode(map[string]bool{"sucesso": true})
 	} else {
-		// Senha errada
 		w.WriteHeader(401)
-		json.NewEncoder(w).Encode(map[string]bool{"sucesso": false})
 	}
 }
