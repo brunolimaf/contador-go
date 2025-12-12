@@ -4,59 +4,63 @@ const appScreen = document.getElementById('app-screen');
 const contadorDisplay = document.getElementById('contador');
 const msgErro = document.getElementById('msg-erro');
 
-// 1. Ao carregar a página, verifica se já existe sessão salva
 window.onload = function() {
-    const logado = localStorage.getItem('usuario_logado');
-    
-    if (logado === 'sim') {
-        mostrarApp();
-        carregarContador();
-    }
+  const logado = localStorage.getItem('usuario_logado');
+  if (logado === 'sim') {
+      mostrarApp();
+      carregarContadorDoServidor(); // <--- TEM QUE SER ESSA NOVA
+  }
 };
 
-// 2. Função para enviar dados ao Go e fazer Login
 async function fazerLogin() {
-    const usuarioInput = document.getElementById('username').value;
-    const senhaInput = document.getElementById('password').value;
+  const usuarioInput = document.getElementById('username').value;
+  const senhaInput = document.getElementById('password').value;
 
-    // Envia os dados para o backend em Go
-    const response = await fetch('/api/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ usuario: usuarioInput, senha: senhaInput })
-    });
+  const response = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ usuario: usuarioInput, senha: senhaInput })
+  });
 
-    if (response.ok) {
-        // Se o Go disse que está OK:
-        localStorage.setItem('usuario_logado', 'sim'); // Salva sessão
-        mostrarApp();
-        carregarContador();
-        msgErro.innerText = "";
-    } else {
-        msgErro.innerText = "Usuário ou senha incorretos!";
-    }
+  if (response.ok) {
+      localStorage.setItem('usuario_logado', 'sim');
+      mostrarApp();
+      
+      // === A CORREÇÃO É AQUI ===
+      // Antes estava: carregarContador();
+      // Agora deve ser:
+      carregarContadorDoServidor(); 
+      // =========================
+      
+      msgErro.innerText = "";
+  } else {
+      msgErro.innerText = "Usuário ou senha incorretos!";
+  }
 }
 
-// 3. Função do Contador
-function incrementar() {
-    // Pega o valor atual
-    let valorAtual = parseInt(localStorage.getItem('valor_contador') || 0);
-    
-    // Aumenta 1
-    valorAtual++;
-    
-    // Salva no Local Storage (navegador)
-    localStorage.setItem('valor_contador', valorAtual);
-    
-    // Atualiza a tela
-    contadorDisplay.innerText = valorAtual;
+// NOVA FUNÇÃO: Manda incrementar no Banco de Dados
+async function incrementar() {
+  try {
+      const res = await fetch('/api/contador', { method: 'POST' }); // Faz um POST
+      const data = await res.json();
+      
+      // Atualiza a tela com o valor que voltou do banco
+      contadorDisplay.innerText = data.valor;
+  } catch (e) {
+      console.error("Erro ao incrementar", e);
+  }
 }
 
-// Auxiliares
-function carregarContador() {
-    // Busca do storage, se não tiver nada, assume 0
-    const valorSalvo = localStorage.getItem('valor_contador') || 0;
-    contadorDisplay.innerText = valorSalvo;
+// NOVA FUNÇÃO: Busca o valor atual do Banco de Dados
+async function carregarContadorDoServidor() {
+  try {
+      const res = await fetch('/api/contador'); // Faz o GET
+      const data = await res.json();
+      console.log("Valor vindo do banco:", data.valor); // <--- Adicionei esse log para debug
+      contadorDisplay.innerText = data.valor;
+  } catch (e) {
+      console.error("Erro ao buscar contador", e);
+  }
 }
 
 function mostrarApp() {
