@@ -1,0 +1,70 @@
+body {
+  font-family: Arial, sans-serif;
+  background-color: #f0f2f5;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  margin: 0;
+}
+
+.container {
+  background: white;
+  padding: 2rem;
+  border-radius: 10px;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+  text-align: center;
+  width: 300px;
+}
+
+input {
+  display: block;
+  width: 90%;
+  margin: 10px auto;
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+}
+
+button {
+  background-color: #00add8; /* Cor do Go Gopher :) */
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 16px;
+  margin-top: 10px;
+}
+
+button:hover {
+  background-color: #007d9c;
+}
+
+.btn-click {
+  background-color: #28a745;
+  width: 100%;
+  font-size: 20px;
+  padding: 20px;
+}
+
+.btn-sair {
+  background-color: #dc3545;
+  font-size: 12px;
+}
+
+.display-numero {
+  font-size: 60px;
+  font-weight: bold;
+  color: #333;
+  margin: 20px 0;
+}
+
+.hidden {
+  display: none;
+}
+
+.erro {
+  color: red;
+  font-size: 14px;
+}

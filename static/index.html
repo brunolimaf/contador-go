@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Contador Go</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <div class="container">
+        <div id="login-screen">
+            <h2>Acesso Restrito</h2>
+            <input type="text" id="username" placeholder="Usuário (admin)">
+            <input type="password" id="password" placeholder="Senha (12345)">
+            <button onclick="fazerLogin()">Entrar</button>
+            <p id="msg-erro" class="erro"></p>
+        </div>
+
+        <div id="app-screen" class="hidden">
+            <h2>Contador de Clicks</h2>
+            <div class="display-numero" id="contador">0</div>
+            <button class="btn-click" onclick="incrementar()">CLIQUE AQUI</button>
+            <br><br>
+            <button class="btn-sair" onclick="sair()">Sair / Logout</button>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

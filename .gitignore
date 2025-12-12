@@ -1,0 +1,6 @@
+# Ignora a pasta de build local ou executáveis
+main
+main.exe
+# Ignora configurações de IDE
+.vscode/
+.idea/
